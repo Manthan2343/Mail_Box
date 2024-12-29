@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Email Client</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .email-list-item {
+            transition: all 0.3s ease;
+            border-left: 4px solid transparent;
+        }
+
+        .email-list-item.unread {
+            background-color: #f8fafc;
+            font-weight: 600;
+        }
+
+        .email-list-item.read {
+            background-color: #ffffff;
+            font-weight: normal;
+        }
+
+        .email-list-item:hover {
+            background-color: #f1f5f9;
+            border-left-color: #3b82f6;
+        }
+
+        .avatar {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            text-transform: uppercase;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .custom-scrollbar {
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 #f1f5f9;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        .loading {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .filter-badge {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background-color: #ef4444;
+            color: white;
+            border-radius: 50%;
+            padding: 2px 6px;
+            font-size: 0.75rem;
+        }
+
+        @media (max-width: 768px) {
+            .email-view {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                z-index: 50;
+                transform: translateX(100%);
+                transition: transform 0.3s ease-in-out;
+            }
+
+            .email-view.active {
+                transform: translateX(0);
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="bg-white shadow-sm sticky top-0 z-20">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center space-x-3">
+                        <i class="bi bi-envelope-fill text-2xl text-blue-600"></i>
+                        <h1 class="text-xl font-bold text-gray-900">Enhanced Email Client</h1>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <button id="filterAll" class="filter-btn px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 bg-blue-600 text-white">
+                            All
+                        </button>
+                        <button id="filterUnread" class="filter-btn px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200 relative">
+                            Unread
+                            <span class="filter-badge" id="unreadCount">0</span>
+                        </button>
+                        <button id="filterFavorites" class="filter-btn px-4 py-2 rounded-full text-sm font-medium transition-colors duration-200">
+                            <i class="bi bi-star-fill text-yellow-400 mr-1"></i>
+                            Favorites
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
+            <div class="flex flex-col md:flex-row gap-6 h-[calc(100vh-12rem)]">
+                <!-- Email List -->
+                <div class="w-full md:w-2/5 bg-white rounded-lg shadow-lg overflow-hidden">
+                    <div id="emailList" class="h-full overflow-y-auto custom-scrollbar">
+                        <div class="loading-placeholder p-4 text-center text-gray-500">
+                            <i class="bi bi-arrow-repeat spin text-2xl"></i>
+                            Loading emails...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Email Content -->
+                <div id="emailView" class="email-view w-full md:w-3/5 bg-white rounded-lg shadow-lg">
+                    <div class="h-full p-6">
+                        <div id="emailContent" class="h-full overflow-y-auto custom-scrollbar">
+                            <div class="flex flex-col items-center justify-center h-full text-gray-500">
+                                <i class="bi bi-envelope-paper text-4xl mb-4"></i>
+                                <p>Select an email to view details</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // State Management
+        const state = {
+            emails: [],
+            currentFilter: 'all',
+            readEmails: new Set(JSON.parse(localStorage.getItem('readEmails') || '[]')),
+            favoriteEmails: new Set(JSON.parse(localStorage.getItem('favoriteEmails') || '[]')),
+            loading: true,
+            currentPage: 1
+        };
+
+        // Sample Emails (10 emails)
+        const sampleEmails = [
+            { id: 1, from: { name: 'John Doe', email: 'john.doe@example.com' }, subject: 'Welcome to our service', date: '2024-12-01T10:30:00Z', short_description: 'Thank you for signing up!', body: 'Welcome to our service! We are excited to have you on board.', favorite: false },
+            { id: 2, from: { name: 'Jane Smith', email: 'jane.smith@example.com' }, subject: 'Your subscription renewal', date: '2024-12-02T09:45:00Z', short_description: 'Your subscription will renew soon', body: 'Just a reminder that your subscription will renew on December 5th.', favorite: false },
+            { id: 3, from: { name: 'Acme Corp', email: 'noreply@acmecorp.com' }, subject: 'Invoice for December', date: '2024-12-03T08:00:00Z', short_description: 'Your December invoice is ready', body: 'Your invoice for December is ready. Please log in to view your payment details.', favorite: false },
+            { id: 4, from: { name: 'Sarah Lee', email: 'sarah.lee@example.com' }, subject: 'Meeting Reminder', date: '2024-12-04T11:15:00Z', short_description: 'Reminder for our meeting tomorrow', body: 'This is a friendly reminder about our meeting scheduled for tomorrow at 10 AM.', favorite: false },
+            { id: 5, from: { name: 'Tech News', email: 'newsletter@technews.com' }, subject: 'Latest Technology Trends', date: '2024-12-05T14:30:00Z', short_description: 'Read about the latest trends in tech', body: 'Check out the latest trends in technology in our new article. Topics include AI, blockchain, and more!', favorite: false },
+            { id: 6, from: { name: 'Mark Zuckerberg', email: 'mark@facebook.com' }, subject: 'Facebook Updates', date: '2024-12-06T13:45:00Z', short_description: 'Updates on Facebook features', body: 'Check out the latest updates on Facebook, including new features and improvements.', favorite: false },
+            { id: 7, from: { name: 'Amazon', email: 'amazon@amazon.com' }, subject: 'Your Amazon Order', date: '2024-12-07T12:00:00Z', short_description: 'Your order has been shipped', body: 'Your Amazon order has been shipped and will arrive in 2-3 business days.', favorite: false },
+            { id: 8, from: { name: 'Apple Support', email: 'support@apple.com' }, subject: 'Your Apple Support Request', date: '2024-12-08T16:30:00Z', short_description: 'Your support request has been received', body: 'We have received your support request. We will get back to you shortly.', favorite: false },
+            { id: 9, from: { name: 'Google', email: 'no-reply@google.com' }, subject: 'New Features in Gmail', date: '2024-12-09T15:00:00Z', short_description: 'Introducing new features in Gmail', body: 'Check out the latest features in Gmail, including improved search and organization tools.', favorite: false },
+            { id: 10, from: { name: 'Microsoft', email: 'microsoft@ms.com' }, subject: 'Windows Update Available', date: '2024-12-10T17:00:00Z', short_description: 'Your system is ready for an update', body: 'Your Windows system is ready for an update. Click here to learn more and install.', favorite: false }
+        ];
+
+        // UI Update Functions
+        function updateUnreadCount() {
+            const unreadCount = state.emails.filter(email => !state.readEmails.has(email.id)).length;
+            document.getElementById('unreadCount').textContent = unreadCount;
+        }
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return new Intl.DateTimeFormat('en-US', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            }).format(date);
+        }
+
+        function renderEmailList() {
+            const emailList = document.getElementById('emailList');
+            let filteredEmails = state.emails;
+
+            switch(state.currentFilter) {
+                case 'unread':
+                    filteredEmails = state.emails.filter(email => !state.readEmails.has(email.id));
+                    break;
+                case 'favorites':
+                    filteredEmails = state.emails.filter(email => state.favoriteEmails.has(email.id));
+                    break;
+            }
+
+            emailList.innerHTML = filteredEmails.map(email => `
+                <div class="email-list-item p-4 cursor-pointer ${state.readEmails.has(email.id) ? 'read' : 'unread'}"
+                     onclick="selectEmail(${email.id})">
+                    <div class="flex items-start space-x-4">
+                        <div class="avatar">${email.from.name[0]}</div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between">
+                                <p class="text-sm font-medium text-gray-900 truncate">
+                                    ${email.from.name}
+                                </p>
+                                <p class="text-xs text-gray-500">
+                                    ${formatDate(email.date)}
+                                </p>
+                            </div>
+                            <p class="text-sm text-gray-900 font-medium mt-1">
+                                ${email.subject}
+                            </p>
+                            <p class="text-sm text-gray-500 mt-1 line-clamp-2">
+                                ${email.short_description}
+                            </p>
+                            ${state.favoriteEmails.has(email.id) ? 
+                                '<i class="bi bi-star-fill text-yellow-400 mt-2"></i>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            updateUnreadCount();
+        }
+
+        async function selectEmail(id) {
+            const emailContent = document.getElementById('emailContent');
+            emailContent.innerHTML = '<div class="loading">Loading email content...</div>';
+
+            const emailView = document.getElementById('emailView');
+            emailView.classList.add('active');
+
+            state.readEmails.add(id);
+            localStorage.setItem('readEmails', JSON.stringify([...state.readEmails]));
+
+            const email = state.emails.find(e => e.id === id);
+
+            emailContent.innerHTML = `
+                <div class="relative">
+                    <button onclick="closeEmailView()" 
+                            class="md:hidden absolute right-0 top-0 p-2">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                    <div class="email-content rounded-lg border border-gray-200 p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-xl font-bold text-gray-900">${email.subject}</h2>
+                            <button onclick="toggleFavorite(${id})" class="focus:outline-none">
+                                <i class="bi ${state.favoriteEmails.has(id) ? 
+                                    'bi-star-fill text-yellow-400' : 'bi-star text-gray-400'}"></i>
+                            </button>
+                        </div>
+                        <div class="flex items-center space-x-4 mb-4">
+                            <div class="avatar">${email.from.name[0]}</div>
+                            <div>
+                                <p class="font-medium">${email.from.name}</p>
+                                <p class="text-sm text-gray-500">${formatDate(email.date)}</p>
+                            </div>
+                        </div>
+                        <div class="prose max-w-none">
+                            ${email.body}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            renderEmailList();
+        }
+
+        function closeEmailView() {
+            document.getElementById('emailView').classList.remove('active');
+        }
+
+        function toggleFavorite(id) {
+            if (state.favoriteEmails.has(id)) {
+                state.favoriteEmails.delete(id);
+            } else {
+                state.favoriteEmails.add(id);
+            }
+            localStorage.setItem('favoriteEmails', JSON.stringify([...state.favoriteEmails]));
+            renderEmailList();
+        }
+
+        // Event Listeners
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.filter-btn').forEach(b => 
+                    b.classList.remove('bg-blue-600', 'text-white'));
+                e.target.classList.add('bg-blue-600', 'text-white');
+                state.currentFilter = e.target.id.replace('filter', '').toLowerCase();
+                renderEmailList();
+            });
+        });
+
+        // Initialize
+        async function init() {
+            state.emails = sampleEmails;  // Set sample emails directly
+            state.loading = false;
+            renderEmailList();
+        }
+
+        init();
+    </script>
+</body>
+</html>
